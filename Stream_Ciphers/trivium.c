@@ -3,105 +3,78 @@
 #include <string.h>
 #include <stdlib.h>
 
+/****************
+*** CONSTANTS ***
+****************/
+/**
+ * Trivium registers indices start counting at 1, so many functions in this program also start counting at 1
+ * This makes for some non-traditional indexing, so be careful!
+ */
+#define NUM_REGS 288
 
-// Define constants that indicate which bits within the LFSRs are used for what
-#define STATE_BITS 288
+#define LFSR_A_SIZE 93
+#define LFSR_A_START 1
+#define LFSR_A_FEEDBACK 69
+#define LFSR_A_FEEDFORWARD 66
+#define LFSR_A_AND1 91
+#define LFSR_A_AND2 92
+#define LFSR_A_END 93
 
-#define lfsr_a_start 0
-#define lfsr_a_feedback 68
-#define lfsr_a_feedforward 65
-#define lfsr_a_and1 90
-#define lfsr_a_and2 91
-#define lfsr_a_end 92
+#define LFSR_B_SIZE 84
+#define LFSR_B_START (LFSR_A_END + 1)
+#define LFSR_B_FEEDBACK (LFSR_B_START + 78 - 1)
+#define LFSR_B_FEEDFORWARD (LFSR_B_START + 69 - 1)
+#define LFSR_B_AND1 (LFSR_B_START + 82 - 1)
+#define LFSR_B_AND2 (LFSR_B_START + 83 - 1)
+#define LFSR_B_END (LFSR_B_START + LFSR_B_SIZE - 1)
 
-#define lfsr_b_start 93
-#define lfsr_b_feedback (lfsr_b_start + 77)
-#define lfsr_b_feedforward (lfsr_b_start + 68)
-#define lfsr_b_and1 (lfsr_b_start + 81)
-#define lfsr_b_and2 (lfsr_b_start + 82)
-#define lfsr_b_end 176
-
-#define lfsr_c_start (lfsr_b_start + 84)
-#define lfsr_c_feedback (lfsr_c_start + 87)
-#define lfsr_c_feedforward (lfsr_c_start + 65)
-#define lfsr_c_and1 (lfsr_c_start + 108)
-#define lfsr_c_and2 (lfsr_c_start + 109)
-#define lfsr_c_end 287
-
-void print_bits(unsigned char *bytes, int len) {
-    for (int i = 0; i < len; i++) {
-        for (int j = 0; j < 8; j++) {
-            printf("%d", !!((bytes[i] << j) & 0x80));
-        }
-    }
-    printf("\n");
-}
-void print_bits_little_last(unsigned char *bytes, int len) {
-    for (int i = len - 1; i >= 0; i--) {
-        for (int j = 7; j >= 0; j--) {
-            printf("%d", !!((bytes[i] << j) & 0x80));
-        }
-    }
-    printf("\n");
-}
-
-void print_hex(unsigned char *bytes, int len) {
-    for (int i = 0; i < len; i++) {
-        printf("%02x ", bytes[i]);
-    }
-    printf("\n");
-}
-
-void print_hex_no_space(unsigned char *bytes, int len) {
-    for (int i = 0; i < len; i++) {
-        printf("%02x", bytes[i]);
-    }
-    printf("\n");
-}
-
-void print_LFSR(uint8_t *state, char letter) {
-    if (letter == 'A') {
-        print_bits_little_last(&state[0], 93);
-        print_hex_no_space(&state[lfsr_a_start], 93);
-    }
-    if (letter == 'B') {
-        print_bits_little_last(&state[lfsr_b_start], 84);
-        print_hex_no_space(&state[lfsr_b_start], 84);
-    }
-    if (letter == 'C') {
-        print_bits_little_last(&state[lfsr_c_start], 111);
-        print_hex_no_space(&state[lfsr_c_start], 111);
-    }
-}
+#define LFSR_C_SIZE 111
+#define LFSR_C_START (LFSR_B_END + 1)
+#define LFSR_C_FEEDBACK (LFSR_C_START + 87 - 1)
+#define LFSR_C_FEEDFORWARD (LFSR_C_START + 66 - 1)
+#define LFSR_C_AND1 (LFSR_C_START + 109 - 1)
+#define LFSR_C_AND2 (LFSR_C_START + 110 - 1)
+#define LFSR_C_END (LFSR_C_START + LFSR_C_SIZE - 1)
 
 
 /***********************
 *** HELPER FUNCTIONS ***
 ***********************/
 /**
- * Gets the value of the bit within pointer located at position bit_pos (0 or 1)
- * @param ptr the pointer to get the bit from 
- * @param bit_pos the position of the bit to get the value of (assumes you are accessing safe memory)
+ * Gets the value of the bit at position bit_pos
+ * @param ptr the pointer to the first byte of memory to start the access from
+ * @param bit_pos the position of the bit to get the value of (1 = LSB)
  * @returns an integer (0 or 1) of the value of the bit
  */
 int get_bit(uint8_t *ptr, int bit_pos) {
-    int ret = (ptr[bit_pos / 8] >> (bit_pos % 8)) & 0x1;
-    return ret;
+    return (ptr[(bit_pos - 1) / 8] >> ((bit_pos - 1) % 8)) & 0x1;
 }
 
 /**
  * Sets the value of the bit in the pointer located at position bit_pos
- * @param ptr the pointer to set the bit of
- * @param bit_pos the position of the bit to set the value of (assumes you are accessing safe memory)
+ * @param ptr the pointer to the first byte of memory to start the access from
+ * @param bit_pos the position of the bit to set the value of (LSB = 1)
  * @param val the value to set the bit to (0 or 1)
  */
 void set_bit(uint8_t *ptr, int bit_pos, int val) {
     if (val == 1) {
-        ptr[bit_pos / 8] |= (1 << (bit_pos % 8));
+        ptr[(bit_pos - 1) / 8] |= (1 << ((bit_pos - 1) % 8));
     }
     else {
-        ptr[bit_pos / 8] &= ~(1 << bit_pos);
+        ptr[(bit_pos - 1) / 8] &= (~(1 << ((bit_pos - 1) % 8)));
     }
+}
+
+void print_state(uint8_t *state) {
+    printf("REGISTERS = \n\r");
+    for (int i = 1; i <= NUM_REGS; i++) {
+        printf("%d", get_bit(state, i));
+
+        if (i == (LFSR_B_START - 1) || i == (LFSR_C_START -1)) {
+            printf("\n\r");
+        }
+    }
+    printf("\n\r");
 }
 
 
@@ -115,24 +88,24 @@ void set_bit(uint8_t *ptr, int bit_pos, int val) {
  * @param state OUTPUT the initial 288-bit state of the registers 
  */
 void trivium_init(uint8_t *key, uint8_t *iv, uint8_t *state) {
-    memset(state, 0, STATE_BITS/8);
+    memset(state, 0, 36); // 36 bytes = 288 bits
 
     // Load the key into LFSR A one bit at a time
     for (int i = 0; i < 80; i++) {
-        int key_bit = (key[i / 8] >> (i % 8)) & 1;
-        set_bit(state, lfsr_a_start + i, key_bit);
+        int key_bit = get_bit(&key[i / 8], (8 - (i % 8))); // Byte is in reverse order
+        set_bit(state, LFSR_A_START + i, key_bit);
     }
 
     // Load the IV into LFSR B one bit at a time
     for (int i = 0; i < 80; i++) {
-        int iv_bit = (iv[i / 8] >> (i % 8)) & 1;
-        set_bit(state, lfsr_b_start + i, iv_bit);
+        int iv_bit = get_bit(&iv[i / 8], (8 - (i % 8))); // Byte is in reverse order
+        set_bit(state, LFSR_B_START + i, iv_bit);
     }
 
     // Set the last 3 bits of LFSR C to be 1
-    set_bit(state, STATE_BITS - 1, 1);
-    set_bit(state, STATE_BITS - 2, 1);
-    set_bit(state, STATE_BITS - 3, 1);
+    set_bit(state, LFSR_C_END, 1);
+    set_bit(state, LFSR_C_END - 1, 1);
+    set_bit(state, LFSR_C_END - 2, 1);
 }
 
 /**
@@ -142,50 +115,65 @@ void trivium_init(uint8_t *key, uint8_t *iv, uint8_t *state) {
  * @returns an integer (0 or 1) of generated keystream bit
  */
 int trivium_generate_bit(uint8_t *state) {
-    print_hex(state, STATE_BITS/8);
-
-    printf("BEFORE\n\r");
-    print_LFSR(state, 'A');
-
     // Calculate the intermediary LFSR output bits
-    int a_out = get_bit(state, lfsr_a_end) ^ get_bit(state, lfsr_a_feedforward);
-    int b_out = get_bit(state, lfsr_b_end) ^ get_bit(state, lfsr_b_feedforward);
-    int c_out = get_bit(state, lfsr_c_end) ^ get_bit(state, lfsr_c_feedforward);
+    int a_out = get_bit(state, LFSR_A_END) ^ get_bit(state, LFSR_A_FEEDFORWARD);
+    int b_out = get_bit(state, LFSR_B_END) ^ get_bit(state, LFSR_B_FEEDFORWARD);
+    int c_out = get_bit(state, LFSR_C_END) ^ get_bit(state, LFSR_C_FEEDFORWARD);
 
     // Calculate the new values to be fed back into the LFSRs
-    uint8_t b_in = a_out ^ (get_bit(state, lfsr_a_and1) & get_bit(state, lfsr_a_and2)) ^ get_bit(state, lfsr_b_feedback);
-    uint8_t c_in = b_out ^ (get_bit(state, lfsr_b_and1) & get_bit(state, lfsr_b_and2)) ^ get_bit(state, lfsr_c_feedback);
-    uint8_t a_in = c_out ^ (get_bit(state, lfsr_c_and1) & get_bit(state, lfsr_c_and2)) ^ get_bit(state, lfsr_a_feedback);
+    uint8_t b_in = a_out ^ (get_bit(state, LFSR_A_AND1) & get_bit(state, LFSR_A_AND2)) ^ get_bit(state, LFSR_B_FEEDBACK);
+    uint8_t c_in = b_out ^ (get_bit(state, LFSR_B_AND1) & get_bit(state, LFSR_B_AND2)) ^ get_bit(state, LFSR_C_FEEDBACK);
+    uint8_t a_in = c_out ^ (get_bit(state, LFSR_C_AND1) & get_bit(state, LFSR_C_AND2)) ^ get_bit(state, LFSR_A_FEEDBACK);
     
-    printf("a_in = %d\n\r", a_in);
-    printf("b_in = %d\n\r", b_in);
-    printf("c_in = %d\n\r", c_in);
+    // printf("LFSR_A_FEEDFORWARD = %d\n\r", get_bit(state, LFSR_A_FEEDFORWARD));
+    // printf("LFSR_A_END = %d\n\r", get_bit(state, LFSR_A_END));
+    // printf("a_out = %d\n\n\r", a_out);
+
+    // printf("LFSR_B_FEEDFORWARD = %d\n\r", get_bit(state, LFSR_B_FEEDFORWARD));
+    // printf("LFSR_B_END = %d\n\r", get_bit(state, LFSR_B_END));
+    // printf("b_out = %d\n\n\r", b_out);
+
+    // printf("LFSR_C_FEEDFORWARD = %d\n\r", get_bit(state, LFSR_C_FEEDFORWARD));
+    // printf("LFSR_C_END = %d\n\r", get_bit(state, LFSR_C_END));
+    // printf("c_out = %d\n\n\r", c_out);
+
+    // printf("LFSR_A_AND1 = %d\n\r", get_bit(state, LFSR_A_AND1));
+    // printf("LFSR_A_AND2 = %d\n\r", get_bit(state, LFSR_A_AND2));
+    // printf("LFSR_B_FEEDBACK = %d\n\r", get_bit(state, LFSR_B_FEEDBACK));
+    // printf("b_in = %d\n\n\r", b_in);
+    
+    // printf("LFSR_B_AND1 = %d\n\r", get_bit(state, LFSR_B_AND1));
+    // printf("LFSR_B_AND2 = %d\n\r", get_bit(state, LFSR_B_AND2));
+    // printf("LFSR_C_FEEDBACK = %d\n\r", get_bit(state, LFSR_C_FEEDBACK));
+    // printf("c_in = %d\n\n\r", c_in);
+    
+    // printf("LFSR_C_AND1 = %d\n\r", get_bit(state, LFSR_C_AND1));
+    // printf("LFSR_C_AND2 = %d\n\r", get_bit(state, LFSR_C_AND2));
+    // printf("LFSR_A_FEEDBACK = %d\n\r", get_bit(state, LFSR_A_FEEDBACK));
+    // printf("a_in = %d\n\n\r", a_in);
+
+    // printf("Generated bit : %d\n\n\r", (a_out ^ b_out ^ c_out));
 
     // Update the LFSRs
     // Shift all values in LFSR A
-    for (int i = lfsr_a_end; i > 0; i--) {
+    for (int i = LFSR_A_END; i > LFSR_A_START; i--) {
         set_bit(state, i, get_bit(state, i - 1));
     }
-    set_bit(state, lfsr_a_start, a_in); // Set the input bit
-
-    printf("AFTER\n\r");
-    print_LFSR(state, 'A');
+    set_bit(state, LFSR_A_START, a_in); // Set the input bit
 
     // Shift all values in LFSR B
-    for (int i = lfsr_b_end; i > lfsr_a_end; i--) {
+    for (int i = LFSR_B_END; i > LFSR_B_START; i--) {
         set_bit(state, i, get_bit(state, i - 1));
     }
-    set_bit(state, lfsr_b_start, b_in); // Set the input bit
+    set_bit(state, LFSR_B_START, b_in); // Set the input bit
 
     // Shift all values in LFSR C
-    for (int i = lfsr_c_end; i > lfsr_b_end; i--) {
+    for (int i = LFSR_C_END; i > LFSR_C_START; i--) {
         set_bit(state, i, get_bit(state, i - 1));
     }
-    set_bit(state, lfsr_c_start, c_in); // Set the input bit
+    set_bit(state, LFSR_C_START, c_in); // Set the input bit
 
     // Calculate the keystream bit
-    printf("Generated bit : %d\n\n\r", (a_out ^ b_out ^ c_out));
-    exit(2);
     return a_out ^ b_out ^ c_out;
 }
 
@@ -195,61 +183,56 @@ int trivium_generate_bit(uint8_t *state) {
  * @returns a byte of keystream material
  */
 int trivium_generate_byte(uint8_t *state) {
-    uint8_t keystream_byte = 0;
-    for (int i = 0; i < 8; i++) {
+    uint8_t keystream_byte = 0x00;
+    for (int i = 1; i <= 8; i++) {
         set_bit(&keystream_byte, i, trivium_generate_bit(state));
     }
-    printf("Generated byte: %02x\n\n\r", keystream_byte);
-    exit(2);
+    // printf("Generated byte: %02x\n\n\r", keystream_byte);
 
     return keystream_byte;
 }
 
 /**
- * "Warms up" the cipher by clocking it 1152 times
+ * "Warms up" the cipher by clocking it 4*288 = 1152 times
  * This will properly randomize the internal state such that attackers cannot compute the key from the keystream
  * @param state the 288-bit Trivium register state
  */
 void trivium_warm_up(uint8_t *state) {
-    for (int i = 0; i < 0; i++) {
+    for (int i = 0; i < 4*288; i++) {
         trivium_generate_bit(state); // Ignore the output
     }
-
-    print_hex(state, STATE_BITS/8);
-    printf("WARM UP DONE\n\r-----------------------------------------------------\n\r");
 }
 
 /**
  * Apply the Trivium cipher to an input text using the provided key and IV (this same function does encryption and decryption)
  * @param input the input text to apply the cipher to
  * @param len the length of the input/output text in BYTES
- * @param key the key to use with the cipher
- * @param iv the initialization vector (IV) to use with the cipher
- * @param output OUTPUT the output result of the cipher, will be the same length as the input
+ * @param key the 80-bit key to use with the cipher
+ * @param iv the 80-bit initialization vector (IV) to use with the cipher
+ * @param output OUTPUT the output result of the cipher, will be the same length as the input (maximum of 2^64 bits)
  */
 void trivium(uint8_t *input, int len, 
              uint8_t *key, uint8_t *iv,
              uint8_t *output) {
     
     // The internal cipher variables
-    uint8_t state[STATE_BITS / 8]; // 288-bit value representing the circular combinations of the 3 LFSRs (93 + 84 + 111) 
+    uint8_t state[36]; // 36 bytes = 288 bits representing the circular combinations of the 3 LFSRs (93 + 84 + 111) 
     
     // Initialize the cipher
     trivium_init(key, iv, state);
     trivium_warm_up(state);
 
-    // Loop through the input, encrypting one byte at a time
+    // Loop through the input, encrypting/decrypting one byte at a time
     for (int i = 0; i < len; i++) {
         output[i] = input[i] ^ trivium_generate_byte(state);
     }
 }
 
+
 /**************
 *** TESTING ***
 **************/
-
-
-void main() {
+int main() {
     // Set test variables for the cipher
     uint8_t key[10] = {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -273,13 +256,9 @@ void main() {
     trivium(ciphertext, len, key, iv, decrypted_plaintext);
 
     // Print results
-    printf(plaintext);
-    printf("\n\n\r");
-    printf(ciphertext);
-    print_hex(ciphertext, len);
-    printf("\n\r");
-    printf(decrypted_plaintext);
-    printf("\n\r");
+    printf("plaintext = %s\n\r", plaintext);
+    printf("ciphertext = %s\n\r", ciphertext);
+    printf("decrypted_plaintext = %s\n\r", decrypted_plaintext);
 
     // Sanity check the results
     if (memcmp(plaintext, ciphertext, len) == 0) {
