@@ -110,6 +110,7 @@ uint8_t pc2_perm[56] = {
     34, 53, 46, 42, 50, 36, 29, 32
 };
 
+
 /***********************
 *** HELPER FUNCTIONS ***
 ***********************/
@@ -139,34 +140,19 @@ void print_byte(uint8_t byte) {
 *** PERMUTATIONS ***
 *******************/
 /**
- * Performs the initial permutation on a plaintext block
- * The actual function of this permutation is essentially a crosswiring
- * @param block a 64-bit plaintext block
+ * Performs a permutation on an input block
+ * @param block the input block to permute. Can be any size <= 64 bits
+ * @param from_size the size of the permutation input (block)
+ * @param to_size the size the permutation output
+ * @param perm pointer to the permutation vector to use
  * @returns the permuted block
  */
-uint64_t initial_permutation(uint64_t block) {
+uint64_t permute(uint64_t block, int from_size, int to_size, uint8_t *perm) {
     // Built the output block one bit at a time
     uint64_t output = 0;
-    for (int i = 0; i < 64; i++) {
+    for (int i = 0; i < to_size; i++) {
         output <<= 1;
-        output |= (block >> (64 - initial_perm[i])) & 0x0000000000000001; 
-    }
-
-    return output;
-}
-
-/**
- * Performs the final permutation on a plaintext block
- * The actual function of this permutation is essentially a crosswiring
- * @param block a 64-bit plaintext block
- * @returns the permuted block
- */
-uint64_t final_permutation(uint64_t block) {
-    // Built the output block one bit at a time
-    uint64_t output = 0;
-    for (int i = 0; i < 64; i++) {
-        output <<= 1;
-        output |= (block >> (64 - final_perm[i])) & 0x0000000000000001; 
+        output |= (block >> (from_size - perm[i])) & 0x0000000000000001; 
     }
 
     return output;
@@ -185,11 +171,7 @@ uint64_t final_permutation(uint64_t block) {
  */
 uint32_t f_function(uint32_t right, uint64_t subkey) {
     // Expand the 32-bit input to 48-bits
-    uint64_t right_expand = 0;
-    for (int i = 0; i < 48; i++) {
-        right_expand <<= 1;
-        right_expand |= (uint64_t) ((right >> (32 - expand_perm[i])) & 0x00000001); 
-    }
+    uint64_t right_expand = permute(right, 32, 48, expand_perm);
 
     // XOR the expanded right side with the round subkey
     uint64_t xor_sbox_input = right_expand ^ subkey;
@@ -219,11 +201,7 @@ uint32_t f_function(uint32_t right, uint64_t subkey) {
     }
 
     // Permute the combined s-boxes outputs (which has been reduced to 32-bits)
-    uint32_t output = 0;
-    for (int i = 0; i < 32; i++) {
-        output <<= 1;
-        output |= (sbox_output >> (32 - f_perm[i])) & 0x00000001; 
-    }
+    uint32_t output = (uint32_t)permute(sbox_output, 32, 32, f_perm);
 
     return output;
 }
@@ -286,11 +264,7 @@ uint64_t key_transform(uint32_t *c, uint32_t *d, int round_num, char mode) {
     uint64_t combined_key = ((uint64_t)(*c) << 28) | ((uint64_t)(*d));
 
     // Compute the PC-2 permutation to produce the subkey (round key)
-    uint64_t subkey = 0;
-    for (int i = 0; i < 48; i++) {
-        subkey <<= 1;
-        subkey |= (combined_key >> (56 - pc2_perm[i])) & 0x0000000000000001; 
-    }
+    uint64_t subkey = permute(combined_key, 56, 48, pc2_perm);
 
     return subkey;
 }
@@ -307,15 +281,11 @@ uint64_t key_transform(uint32_t *c, uint32_t *d, int round_num, char mode) {
 uint64_t des(uint64_t input, uint64_t key, char mode) {
     /*** Perform the initial permutations ***/
     // Input permutation (plaintext/ciphertext)
-    input = initial_permutation(input);
+    input = permute(input, 64, 64, initial_perm);
 
     // Key permutation
     // The reduction of the key to 56-bits is built into the initial key permutation PC-1
-    uint64_t reduced_key = 0;
-    for (int i = 0; i < 56; i++) {
-        reduced_key <<= 1;
-        reduced_key |= (key >> (64 - pc1_perm[i])) & 0x0000000000000001; 
-    }
+    uint64_t reduced_key = permute(key, 64, 56, pc1_perm);
 
     /*** Split into halves ***/
     // Split input text into two halves, L (left) and R (right)
@@ -344,10 +314,10 @@ uint64_t des(uint64_t input, uint64_t key, char mode) {
     uint64_t output = (((uint64_t)r << 32) & 0xFFFFFFFF00000000) | (l & 0x00000000FFFFFFFF);
 
     // Perform the final permutations
-    return final_permutation(output);
+    output = permute(output, 64, 64, final_perm);
+    return output;
 }
  
-
 
 /**************
 *** TESTING ***
