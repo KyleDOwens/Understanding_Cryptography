@@ -274,9 +274,11 @@ uint64_t key_transform(uint32_t *c, uint32_t *d, int round_num, char mode) {
 *** DES ***
 **********/
 /**
- * TODO: write function documentation
- * TODO: implement decryption
- * TODO: perform tests
+ * Applies the DES block cipher to a given input block
+ * @param input the input block to apply the cipher text (plaintext for encryption, ciphertext for decryption)
+ * @param key the 64-bit DES key (the key for DES is technically 56-bits but it is often expanded to 64-bits by adding an odd parity bit every 8th bit, which is the form this implementation uses)
+ * @param mode the mode determining if encryption ('e') or decryption ('d') is being performed
+ * @returns the 64-bit output block with the cipher applied (will be the ciphertext for encryption, or the plaintext for decryption)
  */
 uint64_t des(uint64_t input, uint64_t key, char mode) {
     /*** Perform the initial permutations ***/
@@ -310,7 +312,7 @@ uint64_t des(uint64_t input, uint64_t key, char mode) {
         l = temp;
     }
 
-    // Combine perform one last swap and combine left/right back together
+    // Perform one last swap and combine left/right back together
     uint64_t output = (((uint64_t)r << 32) & 0xFFFFFFFF00000000) | (l & 0x00000000FFFFFFFF);
 
     // Perform the final permutations
