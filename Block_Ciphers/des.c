@@ -114,9 +114,22 @@ uint8_t pc2_perm[56] = {
 *** HELPER FUNCTIONS ***
 ***********************/
 void print_block(uint64_t block) {
-    printf("Block = %ld = ", block);
     for (int i = 63; i >= 0; i--) {
         printf("%ld", (block >> i) & 0x0000000000000001);
+    }
+    printf("\n\r");
+}
+
+void print_halfblock(uint32_t halfblock) {
+    for (int i = 31; i >= 0; i--) {
+        printf("%d", (halfblock >> i) & 0x0000000000000001);
+    }
+    printf("\n\r");
+}
+
+void print_byte(uint8_t byte) {
+    for (int i = 7; i >= 0; i--) {
+        printf("%d", (byte >> i) & 0x01);
     }
     printf("\n\r");
 }
@@ -175,40 +188,41 @@ uint32_t f_function(uint32_t right, uint64_t subkey) {
     uint64_t right_expand = 0;
     for (int i = 0; i < 48; i++) {
         right_expand <<= 1;
-        right_expand |= (uint64_t)(right >> (32 - expand_perm[i])) & 0x0000000000000001; 
+        right_expand |= (uint64_t) ((right >> (32 - expand_perm[i])) & 0x00000001); 
     }
 
     // XOR the expanded right side with the round subkey
-    uint64_t xor_pre_sbox = right_expand ^ subkey;
+    uint64_t xor_sbox_input = right_expand ^ subkey;
     
     // Break the xor results into eight 6-bit blocks
-    uint8_t sblock_inputs[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t sbox_inputs[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     for (int i = 0; i < 6*8; i+=6) {
-        sblock_inputs[i/6] = (xor_pre_sbox >> i) & 0x000000000000003F;
+        // Put the most significant 6 bits into input[0], which will be used with s-box 1 (sboxes[0])
+        sbox_inputs[i/6] = (xor_sbox_input >> (42 - i)) & 0x000000000000003F;
     }
 
     // Feed the eight 6-bit blocks into substitution boxes (s-boxes)
     for (int i = 0; i < 8; i++) {
-        uint8_t msb = (sblock_inputs[i] >> 5) & 0x1;
-        uint8_t lsb = sblock_inputs[i] & 0x01;
+        uint8_t msb = (sbox_inputs[i] >> 5) & 0x1;
+        uint8_t lsb = sbox_inputs[i] & 0x01;
         uint8_t sbox_row = (uint8_t)((msb << 1) | lsb); // Use the MSB and LSB to determine the row
-        uint8_t sbox_col = (uint8_t)((sblock_inputs[i] >> 1) & 0x0F); // Use the inner 4 bits to determine the column
+        uint8_t sbox_col = (uint8_t)((sbox_inputs[i] >> 1) & 0x0F); // Use the inner 4 bits to determine the column
 
-        sblock_inputs[i] = sboxes[i][16*(sbox_row - 1) + (sbox_col - 1)];
+        sbox_inputs[i] = sboxes[i][16*sbox_row + sbox_col];
     }
 
-    // Combine the eight 6-bit blocks back together
-    uint32_t sblock_output = 0;
-    for (int i = 7; i >= 0; i--) {
-        sblock_output <<= 4;
-        sblock_output |= sblock_inputs[i];
+    // Combine the resulting eight 4-bit outputs together
+    uint32_t sbox_output = 0;
+    for (int i = 0; i < 8; i++) {
+        sbox_output <<= 4;
+        sbox_output |= sbox_inputs[i];
     }
 
     // Permute the combined s-boxes outputs (which has been reduced to 32-bits)
     uint32_t output = 0;
     for (int i = 0; i < 32; i++) {
         output <<= 1;
-        output |= (sblock_output >> (32 - f_perm[i])) & 0x00000001; 
+        output |= (sbox_output >> (32 - f_perm[i])) & 0x00000001; 
     }
 
     return output;
@@ -224,36 +238,56 @@ uint32_t f_function(uint32_t right, uint64_t subkey) {
  * @param round_num the current round number, used to determine how much to rotate by
  * @returns the rotated key
  */
-uint32_t key_rotate(uint32_t half_key, int round_num) {
-    if (round_num == 1 || round_num == 2 || round_num == 9 || round_num == 16) {
-        // Rotate 1 bit left
-        return (half_key << 1) | ((half_key >> 27) & 0x00000001);
+uint32_t left_shift(uint32_t half_key, int round_num) {
+    // Rotate depending on the round number
+    int num_rot = (round_num == 1 || round_num == 2 || round_num == 9 || round_num == 16) ? 1 : 2;
+    for (int i = 0; i < num_rot; i++) {
+        half_key = ((half_key << 1) & 0x0FFFFFFF) | ((half_key >> 27) & 0x00000001);
     }
-    else {
-        // Rotate 2 bits left
-        return (half_key << 2) | ((half_key >> 27) & 0x00000002) | ((half_key >> 26) & 0x00000001);
-    }
+    return half_key;
 }
 
 /**
- * Derives 16 round keys (also known as subkeys), 1 for each round
+ * Given one half of a key, rotate it
+ * @param half_key half of a key/subkey to rotate (either c0,...,c16 or d0,...,d16)
+ * @param round_num the current round number, used to determine how much to rotate by
+ * @returns the rotated key
+ */
+uint32_t right_shift(uint32_t half_key, int round_num) {
+    // No shift for round 1
+    if (round_num == 1) {
+        return half_key;
+    }
+
+    // Rotate depending on the round number
+    int num_rot = (round_num == 2 || round_num == 9 || round_num == 16) ? 1 : 2;
+    for (int i = 0; i < num_rot; i++) {
+        half_key = (half_key >> 1) | (((half_key & 0x00000001) << 27) & 0x0FFFFFFF);
+    }
+    return half_key;
+}
+
+/**
+ * Derives a round key (also known as subkeys)
  * Each key contains 48 bits from the 56-bit key
+ * It's important to note that for decryption, C0 = C16 and D0 = D16.
  * @param c pointer to the first half (MSB to center) of the working key (NOT the subkey, the internal key to the transform functions)
  * @param d pointer to the last half (center to LSB) of the working key (NOT the subkey, the internal key to the transform functions)
  * @param round_num the current round number to generate the subkey for
+ * @param mode whether encryption ("e") or decryption ("d") is being performed
  * @returns the current round's subkey
  */
-uint64_t key_transform(uint32_t *c, uint32_t *d, int round_num) {
-    // Rotate the keys
-    *c = key_rotate(*c, round_num);
-    *d = key_rotate(*d, round_num);
+uint64_t key_transform(uint32_t *c, uint32_t *d, int round_num, char mode) {
+    // Rotate the keys (left for encryption, right for decryption)
+    *c = (mode == 'e') ? left_shift(*c, round_num) : right_shift(*c, round_num);
+    *d = (mode == 'e') ? left_shift(*d, round_num) : right_shift(*d, round_num);
 
     // Combine the rotated keys
-    uint64_t combined_key = (((uint64_t)(*c) << 28) & 0x00FFFFFFF0000000) | (*d & 0x000000000FFFFFFF);
+    uint64_t combined_key = ((uint64_t)(*c) << 28) | ((uint64_t)(*d));
 
     // Compute the PC-2 permutation to produce the subkey (round key)
     uint64_t subkey = 0;
-    for (int i = 0; i < 56; i++) {
+    for (int i = 0; i < 48; i++) {
         subkey <<= 1;
         subkey |= (combined_key >> (56 - pc2_perm[i])) & 0x0000000000000001; 
     }
@@ -285,17 +319,17 @@ uint64_t des(uint64_t input, uint64_t key, char mode) {
 
     /*** Split into halves ***/
     // Split input text into two halves, L (left) and R (right)
-    uint32_t l = (input >> 32) & 0x00000000FFFFFFFF;
-    uint32_t r = input & 0x00000000FFFFFFFF;
+    uint32_t l = (uint32_t) (input >> 32) & 0x00000000FFFFFFFF;
+    uint32_t r = (uint32_t) input & 0x00000000FFFFFFFF;
 
     // Split the key into two halves, C and D
-    uint32_t c = (reduced_key >> 28) & 0x000000000FFFFFFF; // left half, MSB -> center
-    uint32_t d = reduced_key & 0x000000000FFFFFFF; // right half, center -> LSB
+    uint32_t c = (uint32_t) (reduced_key >> 28) & 0x000000000FFFFFFF; // left half, MSB -> center
+    uint32_t d = (uint32_t) reduced_key & 0x000000000FFFFFFF; // right half, center -> LSB
 
     /*** Start the blocks of the cipher ***/
     for (int round_num = 1; round_num <= 16; round_num++) {
-        // Compute subkey
-        uint64_t subkey = key_transform(&c, &d, round_num);
+        // Compute 48-bit subkey
+        uint64_t subkey = key_transform(&c, &d, round_num, mode);
 
         // Perform f function
         uint32_t keystream = f_function(r, subkey);
@@ -303,11 +337,11 @@ uint64_t des(uint64_t input, uint64_t key, char mode) {
         // Swap sides
         uint32_t temp = r;
         r = l ^ keystream;
-        l = r;
+        l = temp;
     }
 
-    // Combine left and right back together
-    uint64_t output = (((uint64_t)l << 32) & 0xFFFFFFFF00000000) | (r & 0x00000000FFFFFFFF);
+    // Combine perform one last swap and combine left/right back together
+    uint64_t output = (((uint64_t)r << 32) & 0xFFFFFFFF00000000) | (l & 0x00000000FFFFFFFF);
 
     // Perform the final permutations
     return final_permutation(output);
@@ -318,24 +352,23 @@ uint64_t des(uint64_t input, uint64_t key, char mode) {
 /**************
 *** TESTING ***
 **************/
-
-int main() {
+int main() {    
     // Set test variables for the cipher
     uint64_t plaintext = 0x9474B8E8C73BCA7D;
-    uint64_t key = 0x0000000000000000;
+    uint64_t key = 0x9474B8E8C73BCA7D;
         // Although the key for DES is 56-bits, it is often expanded to 64-bits by adding an odd parity every 8th bit (the 8th bit specifying the parity of the previous 7 bits)
         // For this implementation, use the 64-bit key 
 
     // Encrypt
-    uint64_t ciphertext = des(plaintext, key, 'c');
+    uint64_t ciphertext = des(plaintext, key, 'e');
 
     // Decrypt
     uint64_t decrypted_plaintext = des(ciphertext, key, 'd');
 
     // Print results
-    printf("plaintext = %ld\n\r", plaintext);
-    printf("ciphertext = %ld\n\r", ciphertext);
-    printf("decrypted_plaintext = %ld\n\r", decrypted_plaintext);
+    printf("plaintext = %016lx\n\r", plaintext);
+    printf("ciphertext = %016lx\n\r", ciphertext);
+    printf("decrypted_plaintext = %016lx\n\r", decrypted_plaintext);
 
     // Sanity check the results
     if (memcmp(&plaintext, &ciphertext, 8) == 0) {
