@@ -4,8 +4,10 @@ These implementations are **NOT** written with the user in mind, nor are they se
 
 Schemes implemented:
 ```
-Stream_Ciphers
-├── ChaCha20
-├── Salsa20
-└── Trivium
+├── Block_Ciphers
+│   └── des.c
+└── Stream_Ciphers
+    ├── chacha20.c
+    ├── salsa20.c
+    └── trivium.c
 ```
