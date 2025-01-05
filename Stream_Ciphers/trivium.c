@@ -9,6 +9,7 @@
 /**
  * Trivium registers indices start counting at 1, so many functions in this program also start counting at 1
  * This makes for some non-traditional indexing, so be careful!
+ * While not as standardized or regulated as other ciphers, Trivium has been standardized as a "lightweight cipher" in ISO/IEC 29192-3 (2012)
  */
 #define NUM_REGS 288
 
