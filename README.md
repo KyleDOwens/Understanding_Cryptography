@@ -5,6 +5,7 @@ These implementations are **NOT** written with the user in mind, nor are they se
 Schemes implemented:
 ```
 ├── Block Ciphers
+│   ├── AES
 │   ├── DES
 │   └── PRESENT
 └── Stream Ciphers
