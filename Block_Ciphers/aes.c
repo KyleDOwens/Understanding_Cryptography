@@ -5,7 +5,7 @@
 
 
 #define KEYSIZE 128 // Can be 128, 192, or 256
-#define NUMROUNDS (KEYSIZE == 128) ? 10 : ((KEYSIZE == 192) ? 12 : 14) // 10, 12, or 14 depending on the key size
+#define NUMROUNDS ((KEYSIZE == 128) ? 10 : ((KEYSIZE == 192) ? 12 : 14)) // 10, 12, or 14 depending on the key size
 
 
 /****************
@@ -70,6 +70,13 @@ uint8_t mixcolumn_matrix[16] = {
     0x01, 0x02, 0x03, 0x01,
     0x01, 0x01, 0x02, 0x03,
     0x03, 0x01, 0x01, 0x02
+};
+
+uint8_t inv_mixcolumn_matrix[16] = {
+    0x0E, 0x0B, 0x0D, 0x09,
+    0x09, 0x0E, 0x0B, 0x0D,
+    0x0D, 0x09, 0x0E, 0x0B,
+    0x0B, 0x0D, 0x09, 0x0E
 };
 
 // Log table using 0xe5 (229) as the generator
@@ -317,6 +324,12 @@ void byte_substitution(uint8_t *state) {
         state[i] = sbox[state[i]];
     }
 }
+void inv_byte_substitution(uint8_t *state) {
+    // For each byte in the input, substitute it with the value from the inverse S-box
+    for (int i = 0; i < 128/8; i++) {
+        state[i] = inv_sbox[state[i]];
+    }
+}
 
 
 /**********************
@@ -339,13 +352,28 @@ void shift_row(uint8_t *state, int row) {
         // Save the last value in the row to wrap around at the end
         uint8_t wrap = state[row + 4*3];
         
-        // Shift the row a single byte to the right
+        // Shift the row a single byte to the RIGHT
         for (int col = 3; col > 0; col--) {
             state[row + 4*col] = state[row + 4*(col - 1)];
         }
 
         // Replace the (wrapping the last value back to the start)
         state[row + 4*0] = wrap;
+    }
+}
+void inv_shift_row(uint8_t *state, int row) {
+    // Perform shift the row depending on the row value
+    for (int shift_num = (4 - row) % 4; shift_num > 0; shift_num--) {
+        // Save the last value in the row to wrap around at the end
+        uint8_t wrap = state[row + 4*0];
+        
+        // Shift the row a single byte to the LEFT
+        for (int col = 0; col < 3; col++) {
+            state[row + 4*col] = state[row + 4*(col + 1)];
+        }
+
+        // Replace the (wrapping the last value back to the start)
+        state[row + 4*3] = wrap;
     }
 }
 
@@ -362,6 +390,11 @@ void shift_rows(uint8_t *state) {
         shift_row(state, row);
     }
 }
+void inv_shift_rows(uint8_t *state) {
+    for (int row = 0; row < 4; row++) {
+        inv_shift_row(state, row);
+    }
+}
 
 /**
  * Performs the MixColumn function on a single column of the state
@@ -369,12 +402,23 @@ void shift_rows(uint8_t *state) {
  * @param column the column to mix
  */
 void mix_column(uint8_t *column) {
-    // Perform
     uint8_t C[4] = {0};
     for (int col = 0; col < 4; col++) { // For each row within the mixcolumn_matrix
         for (int i = 0; i < 4; i++) { // For each element within the working row
             C[col] ^= compute_galois_mult(mixcolumn_matrix[i + 4*col], column[i]);
             // C[col] ^= lookup_galois_mult(mixcolumn_matrix[i + 4*col], column[i]);
+        }
+    }
+
+    // Replace the old column with the new column
+    memcpy(column, C, 4);
+}
+void inv_mix_column(uint8_t *column) {
+    uint8_t C[4] = {0};
+    for (int col = 0; col < 4; col++) { // For each row within the mixcolumn_matrix
+        for (int i = 0; i < 4; i++) { // For each element within the working row
+            C[col] ^= compute_galois_mult(inv_mixcolumn_matrix[i + 4*col], column[i]);
+            // C[col] ^= lookup_galois_mult(inv_mixcolumn_matrix[i + 4*col], column[i]);
         }
     }
 
@@ -394,6 +438,20 @@ void mix_columns(uint8_t *state) {
 
         // Mix the column
         mix_column(col_vect);
+        
+        // Copy the results back into the state
+        for (int i = 0; i < 4; i++) {
+            state[i + 4*col] = col_vect[i];
+        }
+    }
+}
+void inv_mix_columns(uint8_t *state) {
+    for (int col = 0; col < 4; col++) {
+        // Treat each column as a vector of size 4 and multiply it by the constant matrix
+        uint8_t col_vect[4] = {state[0 + 4*col], state[1 + 4*col], state[2 + 4*col], state[3 + 4*col]};
+
+        // Mix the column
+        inv_mix_column(col_vect);
         
         // Copy the results back into the state
         for (int i = 0; i < 4; i++) {
@@ -465,7 +523,7 @@ uint32_t g_function(uint32_t word, uint8_t round_num) {
     // Perform byte-wise substitution with S-box
     uint32_t output = 0;
     for (int i = 0; i < 4; i++) {
-        output <<= 4;
+        output <<= 8;
         output |= sbox[(word >> (24 - 8*i)) & 0x000000FF];
     }
 
@@ -494,6 +552,7 @@ uint8_t* generate_round_keys(uint8_t *key) {
     // The key schedule is word-oriented (1 word = 32 bits)
     uint8_t NUM_WORDS = (NUMROUNDS + 1) * 4;
     uint8_t WORDS_PER_ROUND = (KEYSIZE / 32);
+    uint8_t NUM_KEYGEN_ROUNDS = (NUM_WORDS / WORDS_PER_ROUND) + ((NUM_WORDS % WORDS_PER_ROUND) > 0); // The last round does not always generate the same number of words as the others
 
     // All subkeys are stored in a key expansion array W consisting of words
     uint32_t *W = calloc(NUM_WORDS, sizeof(uint32_t));
@@ -502,7 +561,6 @@ uint8_t* generate_round_keys(uint8_t *key) {
     memcpy(W, key, KEYSIZE / 8);
 
     // !!! If the subkey size and main keysize are NOT the same, the number of key generation rounds does NOT match the number of AES rounds !!!
-    uint8_t NUM_KEYGEN_ROUNDS = (NUM_WORDS / WORDS_PER_ROUND) + ((NUM_WORDS % WORDS_PER_ROUND) > 0); // The last round does not always generate the same number of words as the others
     for (int i = 1; i < NUM_KEYGEN_ROUNDS; i++) {
         // Calculate the leftmost word
         W[WORDS_PER_ROUND * i] = W[WORDS_PER_ROUND * (i - 1)] ^ g_function(W[(WORDS_PER_ROUND * i) - 1], i);
@@ -521,7 +579,63 @@ uint8_t* generate_round_keys(uint8_t *key) {
     }
 
     // Return the word array at a byte array for ease of use later
-    return (uint8_t*)W;
+    uint8_t *output = calloc(NUM_WORDS*4, sizeof(uint32_t));
+    for (int i = 0; i < NUM_WORDS*4; i++) {
+        output[i] = (W[i/4] >> (24 - 8*(i%4))) & 0x000000FF;
+    }
+
+    free(W);
+    return output;
+}
+
+
+/*********************
+*** HIGH LEVEL AES ***
+*********************/
+void aes_encrypt(uint8_t *state, uint8_t *key) {
+    // Generate all the keys
+    uint8_t *subkeys = generate_round_keys(key);
+
+    // Do the first key addition
+    add_key(state, &subkeys[0]);
+
+    // Repeat for the remaining rounds
+    for (int round = 1; round < NUMROUNDS; round++) {
+        byte_substitution(state);
+        shift_rows(state);
+        mix_columns(state);
+        add_key(state, &subkeys[round * 128/8]);
+    }
+
+    // Do the last round
+    byte_substitution(state);
+    shift_rows(state);
+    add_key(state, &subkeys[NUMROUNDS * 128/8]);
+
+    free(subkeys);
+}
+
+void aes_decrypt(uint8_t *state, uint8_t *key) {
+    // Generate all the keys
+    uint8_t *subkeys = generate_round_keys(key);
+
+    // Do the first round (inverse of the last encryption round)
+    add_key(state, &subkeys[NUMROUNDS * 128/8]);
+    inv_shift_rows(state);
+    inv_byte_substitution(state);
+
+    // Repeat for the remaining rounds
+    for (int round = NUMROUNDS - 1; round > 0; round--) {
+        add_key(state, &subkeys[round * 128/8]);
+        inv_mix_columns(state);
+        inv_shift_rows(state);
+        inv_byte_substitution(state);
+    }
+
+    // Do the final key addition
+    add_key(state, &subkeys[0]);
+
+    free(subkeys);
 }
 
 
@@ -530,29 +644,18 @@ uint8_t* generate_round_keys(uint8_t *key) {
 **************/
 int main() {    
     // Set test variables for the cipher
-    uint8_t plaintext[16] = {'a', 'b', 'c', 'd', 'e', 'f', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'};
+    uint8_t input[16] = {'a', 'b', 'c', 'd', 'e', 'f', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'};
     uint8_t key[16] = {'k', 'k', 'k', 'k', 'e', 'e', 'e', 'e', 'y', 'y', 'y', 'y', '.', '.', '.', '.'};
 
-    print_block_m16(plaintext); printf("\n");
-    byte_substitution(plaintext);
-    print_block_m16(plaintext); printf("\n");
-    shift_rows(plaintext);
-    print_block_m16(plaintext); printf("\n");
-    mix_columns(plaintext);
-    print_block_m16(plaintext); printf("\n");
+    printf("plaintext = \n"); print_block_m16(input); printf("\n");
 
-    // Print results
-    // printf("plaintext = %016lx\n\r", plaintext);
-    // printf("ciphertext = %016lx\n\r", ciphertext);
-    // printf("decrypted_plaintext = %016lx\n\r", decrypted_plaintext);
+    // Encrypt
+    aes_encrypt(input, key);
+    printf("ciphertext = \n"); print_block_m16(input); printf("\n");
 
-    // Sanity check the results
-    // if (memcmp(&plaintext, &ciphertext, 8) == 0) {
-    //     printf("ERROR: Plaintext and ciphertext ARE the same!\n\r");
-    // }
-    // if (memcmp(&plaintext, &decrypted_plaintext, 8) != 0) {
-    //     printf("ERROR: Plaintext and decrypted_plaintext are NOT the same!\n\r");
-    // }
+    // Decrypt
+    aes_decrypt(input, key);
+    printf("decrypted_plaintext = \n"); print_block_m16(input); printf("\n");
 
     return 0;
 }
