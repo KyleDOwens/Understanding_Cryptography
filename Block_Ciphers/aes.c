@@ -165,7 +165,6 @@ void print_block_m16(uint8_t *block) {
 }
 
 
-
 /****************************
 *** GALOIS MULTIPLICATION ***
 ****************************/
