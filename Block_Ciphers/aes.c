@@ -155,13 +155,6 @@ uint8_t antilog_table[256] = {
 /***********************
 *** HELPER FUNCTIONS ***
 ***********************/
-void print_byte(uint8_t byte) {
-    for (int i = 7; i >= 0; i--) {
-        printf("%d", (byte >> i) & 0x01);
-    }
-    printf("\n");
-}
-
 void print_block_m16(uint8_t *block) {
     for (int r = 0; r < 4; r++) {
         for (int c = 0; c < 4; c++) {
@@ -171,55 +164,6 @@ void print_block_m16(uint8_t *block) {
     }
 }
 
-void print_block_m2(uint8_t *block) {
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < 4; c++) {
-            for (int j = 7; j >= 0; j--) {
-                printf("%d", (*(block + r*sizeof(uint8_t) + 4*c*sizeof(uint8_t)) >> j) & 0x01);
-            }
-            printf(" ");
-        }
-        printf("\n");
-    }
-}
-
-void print_key_16(uint8_t *key) {
-    for (int i = 0; i < KEYSIZE/8; i++) {
-        printf("0x%02x ", *(key + i*sizeof(uint8_t)));
-    }
-    printf("\n");
-}
-
-void print_key_2(uint8_t *key) {
-    for (int i = 0; i < KEYSIZE/8; i++) {
-        for (int j = 7; j >= 0; j--) {
-            printf("%d", (*(key + i*sizeof(uint8_t)) >> j) & 0x01);
-        }
-        printf(" ");
-    }
-    printf("\n");
-}
-
-void print_key_m16(uint8_t *key) {
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < (KEYSIZE/8)/4; c++) {
-            printf("0x%02x ", *(key + r*sizeof(uint8_t) + 4*c*sizeof(uint8_t)));
-        }
-        printf("\n");
-    }
-}
-
-void print_key_m2(uint8_t *key) {
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < (KEYSIZE/8)/4; c++) {
-            for (int j = 7; j >= 0; j--) {
-                printf("%d", (*(key + r*sizeof(uint8_t) + 4*c*sizeof(uint8_t)) >> j) & 0x01);
-            }
-            printf(" ");
-        }
-        printf("\n");
-    }
-}
 
 
 /****************************
