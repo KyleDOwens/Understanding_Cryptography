@@ -8,6 +8,8 @@ Schemes implemented:
 │   ├── AES
 │   ├── DES
 │   └── PRESENT
+├── Hash_Functions
+│   └── SHA-256
 └── Stream Ciphers
     ├── ChaCha20
     ├── Salsa20
