@@ -28,8 +28,6 @@ uint32_t H0[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x
 /********************
 *** PREPROCESSING ***
 ********************/
-#include <inttypes.h>
-
 /**
  * Pad the message to be a multiple of the 512 bits
  * Will append a 1, then k zero bits, and then a 64-bit block at the end containing the original msg length
@@ -204,6 +202,11 @@ void compress(uint8_t* block, uint32_t *prev_H) {
     prev_H[7] += H; 
 }
 
+/**
+ * Performs the SHA-256 hash function
+ * @param msg the message to calculate the hash of
+ * @returns the digest of the msg
+ */
 uint8_t* sha256(uint8_t *msg) {
     /*** PREPROCESSING ***/
     // Pad the message
@@ -213,9 +216,10 @@ uint8_t* sha256(uint8_t *msg) {
     // Breaking the padded message into blocks will be done in the main loop
 
     /*** CORE HASH FUNCTIONALITY ***/
-    uint32_t H[8] = {0};
-    memcpy(H, H0, 256/8);
+    uint32_t H[8] = {0}; // The most recent hash value
+    memcpy(H, H0, 256/8); // Set the initial hash value to the constant H0
 
+    // Perform the compression function for each block in the message
     for (int block_index = 0; block_index < (padded_len / 64); block_index++) {
         uint8_t* block = &padded[block_index * 64];
         compress(block, H);
@@ -243,7 +247,7 @@ int main() {
 
     uint8_t *digest = sha256(msg);
     printf("digest = %s\n", digest);
-
+    printf("       = ");
     for (int i = 0; i < 256/8; i++) {
         printf("%02x", digest[i]);
     }
