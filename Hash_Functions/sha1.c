@@ -39,7 +39,7 @@ void pad_msg(uint8_t *msg, int len, uint8_t **padded, int *len_padded) {
     (*padded)[len] = 0x80; // Set the most significant padded bit to 1
 
     // Set the last 64 bits as the 64-bit representation of the original msg length (IN BITS)
-    // This implementation uses LITTLE ENDIAN, so must convert to BIG ENDIAN for SHA-2 algorithm
+    // This implementation uses LITTLE ENDIAN, so must convert to BIG ENDIAN for SHA-1 algorithm
     uint64_t len64 = (uint64_t)(len * 8);
     for (int i = 0; i < 8; i++) {
         (*padded)[*len_padded - 1 - i] = len64 >> 8*i;
