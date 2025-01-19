@@ -9,6 +9,7 @@ Schemes implemented:
 │   ├── DES
 │   └── PRESENT
 ├── Hash_Functions
+│   └── MD5
 │   └── SHA-1
 │   └── SHA-256
 └── Stream Ciphers
