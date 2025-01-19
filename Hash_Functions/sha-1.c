@@ -7,6 +7,7 @@
 /****************
 *** CONSTANTS ***
 ****************/
+// Values H0[0] - H[3] were taken from the MD5 algorithm, H[4] was extended from those values
 uint32_t H0[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
 
 
@@ -59,6 +60,28 @@ uint32_t rotl(uint32_t w, int n) {
     return (w << n) | (w >> (32 - n));
 }
 
+/**
+ * Performs the Choice function, which chooses the respective bit of y or z, based on the corresponding bit of x
+ * @param x the value whose bit will determine which other inpput y or z will be chosen from
+ * @param y the input to choose from when x's bit = 0
+ * @param z the input to choose from when x's bit = 1
+ * @returns the result of the choosing
+ */
+uint32_t ch(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ (~x & z);
+}
+
+/**
+ * Performs the Majority function, which chooses the output bit is what value had the majority among x, y, and z
+ * @param x the first input
+ * @param y the second input
+ * @param z the third input
+ * @returns the result of the majority bits within x, y, and z
+ */
+uint32_t maj(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ (x & z) ^ (y & z);
+}
+
 
 /**********************
 *** CORE SHA-1 HASH ***
@@ -83,7 +106,7 @@ void compress(uint8_t* block, uint32_t *prev_H) {
         W[i] = rotl(W[i-3] ^ W[i-8] ^ W[i-14] ^ W[i-16], 1);
     }
 
-    /*** Perform the compression iteration 64 times ***/
+    /*** Perform the compression iteration 80 times ***/
     // Initialize the states
     uint32_t A = prev_H[0];
     uint32_t B = prev_H[1];
@@ -93,10 +116,12 @@ void compress(uint8_t* block, uint32_t *prev_H) {
 
     // Perform the iteration function
     for (int i = 0; i < 80; i++) {
+        // Get the values for F and k
+        // Values for k were chosen by doing 2^30 times the square roots of 2, 3, 5, and 10, rounded to the nearest integer
         uint32_t F = 0;
         uint32_t k = 0;
         if (i < 20) {
-            F = (B & C) | ((~B) & D);
+            F = ch(B, C, D);
             k = 0x5A827999;
         }
         else if (i < 40) {
@@ -104,7 +129,7 @@ void compress(uint8_t* block, uint32_t *prev_H) {
             k = 0x6ED9EBA1;
         }
         else if (i < 60) {
-            F = (B & C) | (B & D) | (C & D);
+            F = maj(B, C, D);
             k = 0x8F1BBCDC;
         }
         else {
