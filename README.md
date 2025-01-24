@@ -15,5 +15,6 @@ Schemes implemented:
 └── Stream Ciphers
     ├── ChaCha20
     ├── Salsa20
+    ├── RC4
     └── Trivium
 ```
