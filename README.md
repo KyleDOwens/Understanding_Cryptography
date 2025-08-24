@@ -1,6 +1,6 @@
-This repository contains the exercises and cryptographic scheme/primitive implementations from the textbook "Understanding Cryptography" by Christof Paar's, Jan Pelzl's, and Tim Güneysu.
+This repository contains implementations of cryptographic scheme/primitives. They follow the logic outlined in the textbook "Understanding Cryptography" by Christof Paar, Jan Pelzl, and Tim Güneysu.
 
-These implementations are **NOT** written with the user in mind, nor are they secure, nor are they effecient. These implementations should not be used for any reason, they are only to help me learn and gain a deeper unstanding of the material. 
+These implementations are **NOT** written to be used as a tool, nor are they secure, nor are they efficient. These implementations should not be used for any reason. These are only to help me learn, take notes, and gain a deeper unstanding of the material. 
 
 Schemes implemented:
 ```
@@ -12,6 +12,7 @@ Schemes implemented:
 │   └── MD5
 │   └── SHA-1
 │   └── SHA-256
+│   └── SHA3-256
 └── Stream Ciphers
     ├── ChaCha20
     ├── Salsa20
